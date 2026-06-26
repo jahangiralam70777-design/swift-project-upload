@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 // Alias for the common Supabase PKCE callback path
 // (`/auth/callback?code=...`). Some email templates / OAuth flows target
@@ -49,12 +50,13 @@ export const Route = createFileRoute("/auth/callback")({
 });
 
 function AuthCallback() {
-  if (typeof window !== "undefined") {
+  useEffect(() => {
     const search = window.location.search || "";
     const hash = window.location.hash || "";
     const target = pickTarget(new URL(window.location.href));
     window.location.replace(`${target}${search}${hash}`);
-  }
+  }, []);
+
   return (
     <div className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground">
       Signing you in…
