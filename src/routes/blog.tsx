@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useBlogList, useBlogCategories, useBlogTrending } from "@/hooks/queries/use-blog";
@@ -35,9 +35,9 @@ type SortMode = "latest" | "popular";
 
 function BlogIndex() {
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
-  const url = typeof window !== "undefined" ? new URL(window.location.href) : null;
-  const activeCat = url?.searchParams.get("category") ?? "";
+  const activeCat = new URLSearchParams(location.searchStr).get("category") ?? "";
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("latest");
 
@@ -223,16 +223,12 @@ function BlogIndex() {
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span>{featured.reading_minutes} min read</span>
                       <span>•</span>
-                      <span>{featured.view_count.toLocaleString()} views</span>
+                      <span>{formatCount(featured.view_count)} views</span>
                       {featured.published_at && (
                         <>
                           <span>•</span>
                           <time dateTime={featured.published_at}>
-                            {new Date(featured.published_at).toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
+                            {formatDate(featured.published_at, "medium")}
                           </time>
                         </>
                       )}
@@ -280,12 +276,12 @@ function BlogIndex() {
                         <div className="mt-auto flex items-center gap-3 pt-2 text-xs text-muted-foreground">
                           <span>{p.reading_minutes} min</span>
                           <span>•</span>
-                          <span>{p.view_count.toLocaleString()} views</span>
+                          <span>{formatCount(p.view_count)} views</span>
                           {p.published_at && (
                             <>
                               <span>•</span>
                               <time dateTime={p.published_at}>
-                                {new Date(p.published_at).toLocaleDateString()}
+                                {formatDate(p.published_at)}
                               </time>
                             </>
                           )}
@@ -318,7 +314,7 @@ function BlogIndex() {
                                 {t.title}
                               </p>
                               <p className="mt-1 text-[11px] text-muted-foreground">
-                                {t.view_count.toLocaleString()} views • {t.reading_minutes} min
+                                {formatCount(t.view_count)} views • {t.reading_minutes} min
                               </p>
                             </div>
                           </Link>
@@ -364,4 +360,17 @@ function sortBtn(active: boolean) {
   return `rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
     active ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
   }`;
+}
+
+function formatCount(value: number | null | undefined) {
+  return new Intl.NumberFormat("en-US").format(value ?? 0);
+}
+
+function formatDate(value: string, style: "short" | "medium" = "short") {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    ...(style === "medium"
+      ? { month: "short", day: "numeric", year: "numeric" }
+      : { year: "numeric", month: "numeric", day: "numeric" }),
+  }).format(new Date(value));
 }
