@@ -5,6 +5,30 @@ interface State {
   error: Error | null;
 }
 
+function isChunkLoadError(error: Error) {
+  return /ChunkLoadError|Loading chunk|dynamically imported module|Failed to fetch|CSS_CHUNK_LOAD_FAILED/i.test(
+    `${error.message}\n${error.stack ?? ""}`,
+  );
+}
+
+function recoverStaleChunkOnce(error: Error) {
+  if (!isChunkLoadError(error) || typeof window === "undefined") return false;
+  try {
+    const key = "caaspire.chunk_recovery_v1";
+    const prior = JSON.parse(window.sessionStorage.getItem(key) || "null") as
+      | { href?: string; ts?: number }
+      | null;
+    const now = Date.now();
+    if (prior?.href === window.location.href && now - (prior.ts ?? 0) < 600_000) return false;
+    window.sessionStorage.setItem(key, JSON.stringify({ href: window.location.href, ts: now }));
+    window.location.reload();
+    return true;
+  } catch {
+    window.location.reload();
+    return true;
+  }
+}
+
 /**
  * Top-level React error boundary. Catches crashes that escape route-level
  * errorComponents (e.g. inside providers, layout shells, modals rendered
@@ -18,6 +42,7 @@ export class RootErrorBoundary extends Component<{ children: ReactNode }, State>
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    if (recoverStaleChunkOnce(error)) return;
     reportError({
       source: "frontend",
       severity: "critical",

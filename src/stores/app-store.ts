@@ -39,7 +39,9 @@ let storageSubscribed = false;
 let inflightRefresh: Promise<UserSession> | null = null;
 let authEpoch = 0;
 let refreshEpoch = 0;
+let storageAuthRefreshTimer: number | null = null;
 const AUTH_REFRESH_TIMEOUT_MS = 8_000;
+const STORAGE_AUTH_REFRESH_DEBOUNCE_MS = 250;
 
 function deferAuthWork(work: () => void) {
   if (typeof window !== "undefined") {
@@ -101,7 +103,6 @@ export function getLocalAuthSnapshot(): AuthUser | null {
 export function hasLocalAuthSession(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    if (window.localStorage.getItem(AUTH_SNAPSHOT_KEY)) return true;
     if (window.localStorage.getItem("edumaster.demo_session")) return true;
     for (let i = 0; i < window.localStorage.length; i++) {
       const key = window.localStorage.key(i);
@@ -143,6 +144,15 @@ function emitAuthSync() {
   // native `storage` events from persistAuthSnapshot/localStorage writes.
 }
 
+function scheduleStorageAuthRefresh() {
+  if (typeof window === "undefined") return;
+  if (storageAuthRefreshTimer) window.clearTimeout(storageAuthRefreshTimer);
+  storageAuthRefreshTimer = window.setTimeout(() => {
+    storageAuthRefreshTimer = null;
+    void useAppStore.getState().refreshAuth();
+  }, STORAGE_AUTH_REFRESH_DEBOUNCE_MS);
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   sessionReady: true,
@@ -161,7 +171,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     applyThemeClass(theme);
     persistTheme(theme);
     const demoUser = getDemoSession();
-    const snapshotUser = getLocalAuthSnapshot();
+    // Only hydrate a cached user snapshot if a real local auth token (or demo
+    // session) still exists. A leftover snapshot by itself is not a session;
+    // restoring it made /login redirect to /dashboard, where the student guard
+    // immediately redirected back to /login — an auth-loop on stale storage.
+    const snapshotUser = hasLocalAuthSession() ? getLocalAuthSnapshot() : null;
     const localUser = demoUser ?? snapshotUser;
     set({
       theme,
@@ -251,7 +265,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           !(key.startsWith("sb-") && key.endsWith("-auth-token"))
         )
           return;
-        void useAppStore.getState().refreshAuth({ force: true });
+        scheduleStorageAuthRefresh();
       });
     }
 
@@ -316,6 +330,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         const demoUser = getDemoSession();
         if (!data.session && !demoUser) {
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch {
+            /* no remote session to revoke; local storage cleanup is best-effort */
+          }
           persistAuthSnapshot(null);
           clearLocalSessionId();
           if (runId === refreshEpoch) {

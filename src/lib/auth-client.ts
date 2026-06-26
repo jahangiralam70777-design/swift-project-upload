@@ -7,8 +7,11 @@ import { checkAuthRateLimit } from "@/lib/rate-limit.functions";
 import { checkAuthAllowed } from "@/lib/auth-controls.functions";
 import { trackEvent } from "@/lib/tracking";
 import { clearSessionTimers } from "@/lib/session-timeout";
+import { withTimeout } from "@/lib/async-timeout";
 
 const LOGIN_EVENT_KEY = "edumaster.login_event_id";
+const AUTH_PRIMARY_TIMEOUT_MS = 15_000;
+const AUTH_SECONDARY_TIMEOUT_MS = 5_000;
 
 export function clearClientAuthStorage(options: { all?: boolean } = {}) {
   if (typeof window === "undefined") return;
@@ -45,7 +48,11 @@ export function clearClientAuthStorage(options: { all?: boolean } = {}) {
  */
 async function gateAuth(action: "login" | "signup" | "password_reset") {
   try {
-    await checkAuthRateLimit({ data: { action } });
+    await withTimeout(
+      checkAuthRateLimit({ data: { action } }),
+      AUTH_SECONDARY_TIMEOUT_MS,
+      `${action} rate-limit check timed out`,
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     try {
@@ -94,7 +101,11 @@ export async function signInWithEmail(
   // can read the actual role. Admins / super-admins are always allowed. Admin
   // login pages should pass intent: "admin" to skip the check entirely (defence
   // in depth — admin login must never be blocked).
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await withTimeout(
+    supabase.auth.signInWithPassword({ email, password }),
+    AUTH_PRIMARY_TIMEOUT_MS,
+    "Sign-in request timed out. Please check your connection and try again.",
+  );
   if (error) {
     // Supabase returns a generic message for banned accounts. Translate it.
     if (/banned|disabled|user.*not.*allowed/i.test(error.message ?? "")) {
@@ -110,7 +121,11 @@ export async function signInWithEmail(
     const uid = data.user?.id;
     if (uid) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: banned } = await (supabase as any).rpc("is_user_banned", { _user_id: uid });
+      const { data: banned } = await withTimeout<{ data: boolean | null }>(
+        (supabase as any).rpc("is_user_banned", { _user_id: uid }),
+        AUTH_SECONDARY_TIMEOUT_MS,
+        "Ban check timed out",
+      );
       if (banned === true) {
         await supabase.auth.signOut().catch(() => undefined);
         throw new Error("Your account has been banned. Please contact support.");
@@ -126,10 +141,11 @@ export async function signInWithEmail(
   try {
     const uid = data.user?.id;
     if (uid) {
-      const { data: roleRows } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", uid);
+      const { data: roleRows } = await withTimeout(
+        supabase.from("user_roles").select("role").eq("user_id", uid),
+        AUTH_SECONDARY_TIMEOUT_MS,
+        "Role lookup timed out",
+      );
       const roles = (roleRows ?? []).map((r) => r.role as string);
       if (roles.includes("super_admin")) role = "super_admin";
       else if (roles.includes("admin")) role = "admin";
@@ -145,7 +161,11 @@ export async function signInWithEmail(
   const isPrivileged = role === "admin" || role === "super_admin" || role === "moderator";
   if (options.intent !== "admin" && !isPrivileged) {
     try {
-      const r = await checkAuthAllowed({ data: { kind: "login" } });
+      const r = await withTimeout(
+        checkAuthAllowed({ data: { kind: "login" } }),
+        AUTH_SECONDARY_TIMEOUT_MS,
+        "Login availability check timed out",
+      );
       if (!r.allowed) {
         // Block student access: tear down the session we just created.
         await supabase.auth.signOut().catch(() => undefined);
@@ -169,7 +189,11 @@ export async function signInWithEmail(
   void (async () => {
     try {
       const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-      const res = await recordLoginEvent({ data: { user_agent: ua } });
+      const res = await withTimeout(
+        recordLoginEvent({ data: { user_agent: ua } }),
+        AUTH_SECONDARY_TIMEOUT_MS,
+        "Login tracking timed out",
+      );
       if (typeof window !== "undefined" && res?.event_id) {
         localStorage.setItem(LOGIN_EVENT_KEY, res.event_id);
       }
@@ -205,19 +229,23 @@ export async function signUpWithEmail(input: {
   // and the verification token is silently lost.
   const redirectTo =
     typeof window !== "undefined" ? `${window.location.origin}/email-verified` : undefined;
-  const { data, error } = await supabase.auth.signUp({
-    email: input.email,
-    password: input.password,
-    options: {
-      emailRedirectTo: redirectTo,
-      data: {
-        ...(input.displayName ? { display_name: input.displayName } : {}),
-        ...(input.phone ? { phone: input.phone } : {}),
-        ...(input.level ? { level: input.level } : {}),
-        ...(input.referralSource ? { referral_source: input.referralSource } : {}),
+  const { data, error } = await withTimeout(
+    supabase.auth.signUp({
+      email: input.email,
+      password: input.password,
+      options: {
+        emailRedirectTo: redirectTo,
+        data: {
+          ...(input.displayName ? { display_name: input.displayName } : {}),
+          ...(input.phone ? { phone: input.phone } : {}),
+          ...(input.level ? { level: input.level } : {}),
+          ...(input.referralSource ? { referral_source: input.referralSource } : {}),
+        },
       },
-    },
-  });
+    }),
+    AUTH_PRIMARY_TIMEOUT_MS,
+    "Sign-up request timed out. Please check your connection and try again.",
+  );
   console.info("[auth] signUp result", {
     hasUser: Boolean(data?.user),
     hasSession: Boolean(data?.session),
@@ -232,7 +260,11 @@ export async function signUpWithEmail(input: {
       // emails (e.g. demoted admins). Banned → support; otherwise → sign-in/reset.
       try {
         const { checkEmailBanStatus } = await import("@/lib/check-email-status.functions");
-        const r = await checkEmailBanStatus({ data: { email: input.email } });
+        const r = await withTimeout(
+          checkEmailBanStatus({ data: { email: input.email } }),
+          AUTH_SECONDARY_TIMEOUT_MS,
+          "Email status check timed out",
+        );
         if (r?.banned) {
           throw new Error(
             "This account has been banned. Please contact support — banned accounts cannot be re-registered.",
@@ -274,7 +306,11 @@ export async function resetPasswordForEmail(email: string) {
       ? `${window.location.origin}/reset-password?type=recovery`
       : undefined;
   console.log("[auth] resetPasswordForEmail →", { email, redirectTo });
-  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  const { error } = await withTimeout(
+    supabase.auth.resetPasswordForEmail(email, { redirectTo }),
+    AUTH_PRIMARY_TIMEOUT_MS,
+    "Password reset request timed out. Please check your connection and try again.",
+  );
   if (error) {
     console.error("[auth] resetPasswordForEmail error:", error);
     // Re-throw with a friendlier message for common cases.
@@ -288,7 +324,11 @@ export async function resetPasswordForEmail(email: string) {
 
 
 export async function updatePassword(newPassword: string) {
-  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  const { error } = await withTimeout(
+    supabase.auth.updateUser({ password: newPassword }),
+    AUTH_PRIMARY_TIMEOUT_MS,
+    "Password update timed out. Please check your connection and try again.",
+  );
   if (error) throw error;
 }
 
@@ -299,7 +339,11 @@ export async function signOut() {
     if (typeof window !== "undefined") {
       const eventId = localStorage.getItem(LOGIN_EVENT_KEY);
       if (eventId) {
-        await recordLogoutEvent({ data: { event_id: eventId } });
+        await withTimeout(
+          recordLogoutEvent({ data: { event_id: eventId } }),
+          AUTH_SECONDARY_TIMEOUT_MS,
+          "Logout tracking timed out",
+        );
         localStorage.removeItem(LOGIN_EVENT_KEY);
       }
       try {
@@ -311,7 +355,14 @@ export async function signOut() {
   } catch (err) {
     console.warn("[auth] logout event tracking failed", err);
   }
-  const { error } = await supabase.auth.signOut();
+  const { error } = await withTimeout(
+    supabase.auth.signOut(),
+    AUTH_PRIMARY_TIMEOUT_MS,
+    "Sign-out request timed out",
+  ).catch((error) => {
+    console.warn("[auth] remote sign-out timed out/failed; clearing local session", error);
+    return { error: null };
+  });
   // Always clear the remember-me flag + last-activity stamp so the next
   // sign-in starts from a clean default (sessionStorage-only).
   clearSessionTimers();
@@ -324,7 +375,15 @@ export async function signOut() {
 }
 
 export async function fetchSessionUser(session?: Session | null): Promise<AuthUser | null> {
-  const resolvedSession = session ?? (await supabase.auth.getSession()).data.session;
+  const resolvedSession =
+    session ??
+    (
+      await withTimeout(
+        supabase.auth.getSession(),
+        AUTH_SECONDARY_TIMEOUT_MS,
+        "Session lookup timed out",
+      )
+    ).data.session;
   if (!resolvedSession?.user) return null;
 
   const userId = resolvedSession.user.id;
@@ -334,7 +393,7 @@ export async function fetchSessionUser(session?: Session | null): Promise<AuthUs
   // on production never blocks the auth state from settling. If a lookup
   // times out we still return a usable AuthUser from the verified session,
   // but the role is downgraded to "student" — see H-3 below.
-  const withTimeout = <T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> =>
+  const withFallbackTimeout = <T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> =>
     new Promise((resolve) => {
       const t = setTimeout(() => {
         console.warn("[auth] profile/role lookup timed out after", ms, "ms");
@@ -354,7 +413,7 @@ export async function fetchSessionUser(session?: Session | null): Promise<AuthUs
     });
 
   const [profileRes, rolesRes, banRes] = await Promise.all([
-    withTimeout(
+    withFallbackTimeout(
       supabase
         .from("profiles")
         .select("display_name,deleted_at,status")
@@ -367,14 +426,14 @@ export async function fetchSessionUser(session?: Session | null): Promise<AuthUs
         data: { display_name?: string; deleted_at?: string | null; status?: string | null } | null | undefined;
       },
     ),
-    withTimeout(
+    withFallbackTimeout(
       supabase.from("user_roles").select("role").eq("user_id", userId) as unknown as PromiseLike<{
         data: { role: string }[] | null;
       }>,
       4000,
       { data: null } as { data: { role: string }[] | null },
     ),
-    withTimeout(
+    withFallbackTimeout(
       (supabase as unknown as {
         rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: boolean | null }>;
       }).rpc("is_user_banned", { _user_id: userId }),

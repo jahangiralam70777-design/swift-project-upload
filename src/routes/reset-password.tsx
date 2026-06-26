@@ -13,6 +13,9 @@ import {
 import { updatePassword } from "@/lib/auth-client";
 import { supabase } from "@/integrations/supabase/client";
 import { useAppStore } from "@/stores/app-store";
+import { withTimeout } from "@/lib/async-timeout";
+
+const RECOVERY_AUTH_TIMEOUT_MS = 12_000;
 
 export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
@@ -131,7 +134,11 @@ function ResetPassword() {
 
         // 1) PKCE flow — exchange ?code= for a session.
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+          const { error } = await withTimeout(
+            supabase.auth.exchangeCodeForSession(window.location.href),
+            RECOVERY_AUTH_TIMEOUT_MS,
+            "Password recovery code exchange timed out",
+          );
           if (error) return showInvalid(error.message);
           // Clean the URL so a refresh won't try to re-exchange a used code.
           window.history.replaceState({}, "", window.location.pathname);
@@ -141,10 +148,14 @@ function ResetPassword() {
 
         // 2) Token-hash OTP flow.
         if (tokenHash && (type === "recovery" || !type)) {
-          const { error } = await supabase.auth.verifyOtp({
-            type: "recovery",
-            token_hash: tokenHash,
-          });
+          const { error } = await withTimeout(
+            supabase.auth.verifyOtp({
+              type: "recovery",
+              token_hash: tokenHash,
+            }),
+            RECOVERY_AUTH_TIMEOUT_MS,
+            "Password recovery OTP exchange timed out",
+          );
           if (error) return showInvalid(error.message);
           window.history.replaceState({}, "", window.location.pathname);
           markReady();
@@ -156,7 +167,11 @@ function ResetPassword() {
         if (recoveryState.hasImplicitTokens || recoveryState.hasRecoveryType) {
           // Give supabase-js a tick to detect & persist the hash session.
           await new Promise((r) => setTimeout(r, 100));
-          const { data } = await supabase.auth.getSession();
+          const { data } = await withTimeout(
+            supabase.auth.getSession(),
+            RECOVERY_AUTH_TIMEOUT_MS,
+            "Password recovery session restore timed out",
+          );
           if (data.session) {
             window.history.replaceState({}, "", window.location.pathname);
             markReady();

@@ -97,6 +97,7 @@ export function DefaultErrorFallback({ error, reset }: { error: Error; reset: ()
   // chain setStates, causing React error #185 ("Maximum update depth
   // exceeded"). Comparing by message+stack breaks that loop.
   const errorSigRef = useRef<string>("");
+  const scheduledAttemptRef = useRef(-1);
 
   useEffect(() => {
     if (typeof console !== "undefined") {
@@ -109,10 +110,19 @@ export function DefaultErrorFallback({ error, reset }: { error: Error; reset: ()
   useEffect(() => {
     if (isNonRetryable(error)) return;
     const sig = `${error?.message ?? ""}::${error?.stack?.slice(0, 200) ?? ""}`;
-    // Same error as last render → don't restart the retry pipeline.
-    if (sig === errorSigRef.current && attempts > 0) return;
-    errorSigRef.current = sig;
+    if (sig !== errorSigRef.current) {
+      errorSigRef.current = sig;
+      scheduledAttemptRef.current = -1;
+      setRecovering(false);
+      if (attempts !== 0) {
+        setAttempts(0);
+        return;
+      }
+    }
     if (attempts >= MAX_AUTO_RETRIES) return;
+    // Same render/attempt already scheduled → don't restart the timer.
+    if (scheduledAttemptRef.current === attempts) return;
+    scheduledAttemptRef.current = attempts;
     setRecovering(true);
     const delay = AUTO_RETRY_DELAYS_MS[Math.min(attempts, AUTO_RETRY_DELAYS_MS.length - 1)];
     timerRef.current = setTimeout(() => {
@@ -166,6 +176,7 @@ export function DefaultErrorFallback({ error, reset }: { error: Error; reset: ()
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={async () => {
+              scheduledAttemptRef.current = -1;
               setAttempts(0);
               try {
                 await withTimeout(
