@@ -154,10 +154,17 @@ export function Navbar() {
               className="grid h-9 w-9 place-items-center rounded-xl border border-border/60 bg-background/60 text-foreground transition hover:-translate-y-0.5 hover:border-[var(--neon-purple)]/60"
               aria-label="Toggle theme"
             >
-              {themeIsDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              <Sun className="hidden h-4 w-4 dark:block" />
+              <Moon className="block h-4 w-4 dark:hidden" />
             </button>
 
-            {showAuthedNav ? (
+            {/* Reserve fixed-width slot so the auth controls never push other
+                items around when the session resolves after hydration. */}
+            <div className="hidden min-w-[180px] items-center justify-end gap-2 sm:flex">
+              {!authSlotReady ? (
+                <span className="h-9 w-[160px]" aria-hidden />
+              ) : showAuthedNav ? (
+
               <Link
                 to={dashboardHref}
                 className="hidden items-center gap-1.5 rounded-xl border border-border/60 bg-background/60 px-3.5 py-2 text-sm font-semibold text-foreground transition hover:-translate-y-0.5 hover:border-[var(--neon-purple)]/60 sm:inline-flex"
