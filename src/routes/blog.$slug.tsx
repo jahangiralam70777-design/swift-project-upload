@@ -157,9 +157,8 @@ function BlogPostPage() {
     );
   }
 
-  const url =
-    typeof window !== "undefined" ? window.location.href : `https://example.com/blog/${post.slug}`;
   const share = (network: "twitter" | "facebook" | "linkedin") => {
+    const url = typeof window !== "undefined" ? window.location.href : `/blog/${post.slug}`;
     const u = encodeURIComponent(url);
     const t = encodeURIComponent(post.title);
     const links: Record<string, string> = {
@@ -171,6 +170,7 @@ function BlogPostPage() {
   };
   const copyLink = async () => {
     try {
+      const url = typeof window !== "undefined" ? window.location.href : `/blog/${post.slug}`;
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
