@@ -164,33 +164,34 @@ export function Navbar() {
               {!authSlotReady ? (
                 <span className="h-9 w-[160px]" aria-hidden />
               ) : showAuthedNav ? (
+                <Link
+                  to={dashboardHref}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-background/60 px-3.5 py-2 text-sm font-semibold text-foreground transition hover:-translate-y-0.5 hover:border-[var(--neon-purple)]/60"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  Dashboard
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-foreground/80 transition hover:text-foreground"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    Login
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_-10px_var(--neon-purple)] transition hover:-translate-y-0.5"
+                    style={{ background: "var(--gradient-cta)" }}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Sign Up
+                  </Link>
+                </>
+              )}
+            </div>
 
-              <Link
-                to={dashboardHref}
-                className="hidden items-center gap-1.5 rounded-xl border border-border/60 bg-background/60 px-3.5 py-2 text-sm font-semibold text-foreground transition hover:-translate-y-0.5 hover:border-[var(--neon-purple)]/60 sm:inline-flex"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                Dashboard
-              </Link>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="hidden items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-foreground/80 transition hover:text-foreground sm:inline-flex"
-                >
-                  <LogIn className="h-4 w-4" />
-                  Login
-                </Link>
-                <Link
-                  to="/signup"
-                  className="hidden items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_-10px_var(--neon-purple)] transition hover:-translate-y-0.5 sm:inline-flex"
-                  style={{ background: "var(--gradient-cta)" }}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Sign Up
-                </Link>
-              </>
-            )}
 
             <button
               type="button"
