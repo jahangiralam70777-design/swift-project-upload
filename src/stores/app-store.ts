@@ -39,7 +39,7 @@ let storageSubscribed = false;
 let inflightRefresh: Promise<UserSession> | null = null;
 let authEpoch = 0;
 let refreshEpoch = 0;
-let storageAuthRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let storageAuthRefreshTimer: number | null = null;
 const AUTH_REFRESH_TIMEOUT_MS = 8_000;
 const STORAGE_AUTH_REFRESH_DEBOUNCE_MS = 250;
 
