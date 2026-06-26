@@ -48,19 +48,18 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState<string>("");
-  const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const user = useAppStore((s) => s.user);
   const sessionReady = useAppStore((s) => s.sessionReady);
   const nav = useSetting<NavbarSettings>("navbar", NAVBAR_DEFAULTS);
   const LINKS: NavLink[] =
     Array.isArray(nav.links) && nav.links.length > 0 ? nav.links : NAVBAR_DEFAULTS.links;
-  // Gate any UI that depends on browser-only state (theme from localStorage,
-  // user session restored by hydrate()) until after the first client commit
-  // so SSR HTML and the first client render are byte-identical.
+  // Auth UI must stay layout-stable across SSR -> hydrate -> session-restore.
+  // We reserve the slot and only swap the content once the session is known.
   const hydrated = useHydrated();
   const showAuthedNav = hydrated && sessionReady && Boolean(user);
-  const themeIsDark = hydrated && theme === "dark";
+  const authSlotReady = hydrated && sessionReady;
+
 
   useEffect(() => {
     const onScroll = () => {
@@ -155,36 +154,44 @@ export function Navbar() {
               className="grid h-9 w-9 place-items-center rounded-xl border border-border/60 bg-background/60 text-foreground transition hover:-translate-y-0.5 hover:border-[var(--neon-purple)]/60"
               aria-label="Toggle theme"
             >
-              {themeIsDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              <Sun className="hidden h-4 w-4 dark:block" />
+              <Moon className="block h-4 w-4 dark:hidden" />
             </button>
 
-            {showAuthedNav ? (
-              <Link
-                to={dashboardHref}
-                className="hidden items-center gap-1.5 rounded-xl border border-border/60 bg-background/60 px-3.5 py-2 text-sm font-semibold text-foreground transition hover:-translate-y-0.5 hover:border-[var(--neon-purple)]/60 sm:inline-flex"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                Dashboard
-              </Link>
-            ) : (
-              <>
+            {/* Reserve fixed-width slot so the auth controls never push other
+                items around when the session resolves after hydration. */}
+            <div className="hidden min-w-[180px] items-center justify-end gap-2 sm:flex">
+              {!authSlotReady ? (
+                <span className="h-9 w-[160px]" aria-hidden />
+              ) : showAuthedNav ? (
                 <Link
-                  to="/login"
-                  className="hidden items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-foreground/80 transition hover:text-foreground sm:inline-flex"
+                  to={dashboardHref}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border/60 bg-background/60 px-3.5 py-2 text-sm font-semibold text-foreground transition hover:-translate-y-0.5 hover:border-[var(--neon-purple)]/60"
                 >
-                  <LogIn className="h-4 w-4" />
-                  Login
+                  <LayoutDashboard className="h-4 w-4" />
+                  Dashboard
                 </Link>
-                <Link
-                  to="/signup"
-                  className="hidden items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_-10px_var(--neon-purple)] transition hover:-translate-y-0.5 sm:inline-flex"
-                  style={{ background: "var(--gradient-cta)" }}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Sign Up
-                </Link>
-              </>
-            )}
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium text-foreground/80 transition hover:text-foreground"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    Login
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_30px_-10px_var(--neon-purple)] transition hover:-translate-y-0.5"
+                    style={{ background: "var(--gradient-cta)" }}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Sign Up
+                  </Link>
+                </>
+              )}
+            </div>
+
 
             <button
               type="button"
