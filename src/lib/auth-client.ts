@@ -375,7 +375,15 @@ export async function signOut() {
 }
 
 export async function fetchSessionUser(session?: Session | null): Promise<AuthUser | null> {
-  const resolvedSession = session ?? (await supabase.auth.getSession()).data.session;
+  const resolvedSession =
+    session ??
+    (
+      await withTimeout(
+        supabase.auth.getSession(),
+        AUTH_SECONDARY_TIMEOUT_MS,
+        "Session lookup timed out",
+      )
+    ).data.session;
   if (!resolvedSession?.user) return null;
 
   const userId = resolvedSession.user.id;
@@ -385,7 +393,7 @@ export async function fetchSessionUser(session?: Session | null): Promise<AuthUs
   // on production never blocks the auth state from settling. If a lookup
   // times out we still return a usable AuthUser from the verified session,
   // but the role is downgraded to "student" — see H-3 below.
-  const withTimeout = <T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> =>
+  const withFallbackTimeout = <T>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> =>
     new Promise((resolve) => {
       const t = setTimeout(() => {
         console.warn("[auth] profile/role lookup timed out after", ms, "ms");
@@ -405,7 +413,7 @@ export async function fetchSessionUser(session?: Session | null): Promise<AuthUs
     });
 
   const [profileRes, rolesRes, banRes] = await Promise.all([
-    withTimeout(
+    withFallbackTimeout(
       supabase
         .from("profiles")
         .select("display_name,deleted_at,status")
@@ -418,14 +426,14 @@ export async function fetchSessionUser(session?: Session | null): Promise<AuthUs
         data: { display_name?: string; deleted_at?: string | null; status?: string | null } | null | undefined;
       },
     ),
-    withTimeout(
+    withFallbackTimeout(
       supabase.from("user_roles").select("role").eq("user_id", userId) as unknown as PromiseLike<{
         data: { role: string }[] | null;
       }>,
       4000,
       { data: null } as { data: { role: string }[] | null },
     ),
-    withTimeout(
+    withFallbackTimeout(
       (supabase as unknown as {
         rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: boolean | null }>;
       }).rpc("is_user_banned", { _user_id: userId }),
