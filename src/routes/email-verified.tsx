@@ -5,6 +5,9 @@ import { AuthShell } from "@/components/auth/AuthShell";
 import { NeonButton } from "@/components/auth/AuthPrimitives";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { withTimeout } from "@/lib/async-timeout";
+
+const AUTH_CALLBACK_TIMEOUT_MS = 12_000;
 
 export const Route = createFileRoute("/email-verified")({
   component: EmailVerified,
@@ -108,7 +111,11 @@ function EmailVerified() {
     const success = async () => {
       if (cancelled) return;
       try {
-        const { data } = await supabase.auth.getUser();
+        const { data } = await withTimeout(
+          supabase.auth.getUser(),
+          AUTH_CALLBACK_TIMEOUT_MS,
+          "Email verification user lookup timed out",
+        );
         if (data?.user?.email) setEmail(data.user.email);
       } catch {
         /* ignore */
@@ -173,7 +180,11 @@ function EmailVerified() {
 
         // --- 1. PKCE flow --------------------------------------
         if (code) {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+          const { data, error } = await withTimeout(
+            supabase.auth.exchangeCodeForSession(window.location.href),
+            AUTH_CALLBACK_TIMEOUT_MS,
+            "Email verification code exchange timed out",
+          );
           console.warn("[email-verified] exchangeCodeForSession result", {
             ok: !error,
             hasSession: Boolean(data?.session),
@@ -200,10 +211,14 @@ function EmailVerified() {
             | "email"
             | "email_change"
             | "recovery";
-          const { data, error } = await supabase.auth.verifyOtp({
-            type: otpType,
-            token_hash: tokenHash,
-          });
+          const { data, error } = await withTimeout(
+            supabase.auth.verifyOtp({
+              type: otpType,
+              token_hash: tokenHash,
+            }),
+            AUTH_CALLBACK_TIMEOUT_MS,
+            "Email verification OTP exchange timed out",
+          );
           console.warn("[email-verified] verifyOtp result", {
             ok: !error,
             hasSession: Boolean(data?.session),
@@ -223,7 +238,11 @@ function EmailVerified() {
           // detectSessionInUrl on the supabase client handles this; just
           // wait briefly and check for a session.
           await new Promise((r) => setTimeout(r, 120));
-          const { data } = await supabase.auth.getSession();
+          const { data } = await withTimeout(
+            supabase.auth.getSession(),
+            AUTH_CALLBACK_TIMEOUT_MS,
+            "Email verification session restore timed out",
+          );
           if (data.session) {
             window.history.replaceState({}, "", window.location.pathname);
             return success();
@@ -231,7 +250,11 @@ function EmailVerified() {
         }
 
         // --- 4. Already verified (user opened link twice) ------
-        const { data } = await supabase.auth.getSession();
+        const { data } = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_CALLBACK_TIMEOUT_MS,
+          "Email verification existing session check timed out",
+        );
         if (data.session) {
           return success();
         }
