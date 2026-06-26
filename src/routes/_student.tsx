@@ -6,11 +6,10 @@ import { DashTopbar } from "@/components/dashboard/DashTopbar";
 import { StudyHeartbeat } from "@/components/tracking/StudyHeartbeat";
 import { NoticeBanner } from "@/components/site/NoticeBanner";
 import { useAppStore, hasLocalAuthSession } from "@/stores/app-store";
-import { supabase } from "@/integrations/supabase/client";
 import { reportError } from "@/lib/error-reporter";
-import { withTimeout } from "@/lib/async-timeout";
 
-const STUDENT_GUARD_TIMEOUT_MS = 8_000;
+const STUDENT_GATE_TIMEOUT_MS = 12_000;
+const STUDENT_REFRESH_THROTTLE_MS = 5_000;
 
 export const Route = createFileRoute("/_student")({
   // Supabase session lives in localStorage; SSR cannot read it, so render
@@ -73,8 +72,11 @@ function StudentLayout() {
   const user = useAppStore((s) => s.user);
   const sessionReady = useAppStore((s) => s.sessionReady);
   const authLoading = useAppStore((s) => s.authLoading);
+  const refreshAuth = useAppStore((s) => s.refreshAuth);
   const [verified, setVerified] = useState(false);
+  const [gateTimedOut, setGateTimedOut] = useState(false);
   const mountedRef = useRef(true);
+  const lastRefreshRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -83,69 +85,54 @@ function StudentLayout() {
     };
   }, []);
 
-  // Deferred (post-mount) auth verification. First client paint renders
-  // null, matching the SSR (ssr:false) output. Then either we commit the
-  // layout, or we navigate to /login.
   useEffect(() => {
-    let cancelled = false;
+    if (verified) return;
+    setGateTimedOut(false);
+    const id = window.setTimeout(() => {
+      setGateTimedOut(true);
+      reportError({
+        source: "frontend",
+        severity: "medium",
+        message: "Student gate timed out before auth settled",
+        route: window.location.pathname,
+        payload: { hasUser: Boolean(user), authLoading, sessionReady, ts: new Date().toISOString() },
+      });
+    }, STUDENT_GATE_TIMEOUT_MS);
+    return () => window.clearTimeout(id);
+  }, [verified, user, authLoading, sessionReady]);
+
+  // Route-level gating now trusts the single global auth store instead of
+  // running another getUser/profile/ban probe. The duplicated probe treated
+  // transient Supabase/network timeouts as invalid sessions and bounced valid
+  // users to /login. AccountStatusGuard owns authoritative ban/delete checks.
+  useEffect(() => {
+    if (!sessionReady || authLoading) return;
     const here = typeof window !== "undefined" ? window.location.href : "/";
     const goLogin = () =>
       navigate({ to: "/login", search: { redirect: here }, replace: true });
 
-    (async () => {
-      if (!hasLocalAuthSession()) {
-        goLogin();
+    if (user) {
+      if (user.role === "student") {
+        setVerified(true);
         return;
       }
-      try {
-        const { data: userData, error: userError } = await withTimeout(
-          supabase.auth.getUser(),
-          STUDENT_GUARD_TIMEOUT_MS,
-          "Student session verification timed out",
-        );
-        if (cancelled || !mountedRef.current) return;
-        if (userError || !userData.user) {
-          await supabase.auth.signOut().catch(() => undefined);
-          goLogin();
-          return;
-        }
-        const uid = userData.user.id;
-        const [{ data: profile }, { data: banned }] = await withTimeout(
-          Promise.all([
-            supabase.from("profiles").select("id,deleted_at,status").eq("id", uid).maybeSingle(),
-            (supabase as unknown as {
-              rpc: (n: string, a: Record<string, unknown>) => Promise<{ data: boolean | null }>;
-            }).rpc("is_user_banned", { _user_id: uid }),
-          ]),
-          STUDENT_GUARD_TIMEOUT_MS,
-          "Student account status verification timed out",
-        );
-        if (cancelled || !mountedRef.current) return;
-        if (
-          (profile &&
-            (profile.deleted_at ||
-              ["suspended", "deleted", "banned"].includes(profile.status ?? ""))) ||
-          banned === true
-        ) {
-          await supabase.auth.signOut().catch(() => undefined);
-          goLogin();
-          return;
-        }
-        if (!cancelled && mountedRef.current) setVerified(true);
-      } catch (err) {
-        if (cancelled || !mountedRef.current) return;
-        reportError({
-          source: "frontend",
-          severity: "high",
-          message: (err as Error)?.message || "Student guard failed",
-        });
-        goLogin();
+      const adminLike =
+        user.role === "admin" || user.role === "super_admin" || user.role === "moderator";
+      navigate({ to: adminLike ? "/admin" : "/login", replace: true });
+      return;
+    }
+
+    if (hasLocalAuthSession()) {
+      const now = Date.now();
+      if (now - lastRefreshRef.current > STUDENT_REFRESH_THROTTLE_MS) {
+        lastRefreshRef.current = now;
+        void refreshAuth();
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
+      return;
+    }
+
+    goLogin();
+  }, [sessionReady, authLoading, user, navigate, refreshAuth]);
 
   // Background role check: a logged-in non-student bounces out.
   useEffect(() => {
@@ -157,7 +144,56 @@ function StudentLayout() {
     }
   }, [sessionReady, authLoading, user, navigate]);
 
-  if (!verified) return null;
+  if (!verified) {
+    if (gateTimedOut) {
+      return (
+        <div className="flex min-h-dvh items-center justify-center bg-background px-4 text-foreground">
+          <div className="max-w-md text-center">
+            <h1 className="text-xl font-semibold tracking-tight">Session check is taking longer than expected</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              We kept your session intact instead of logging you out during a slow network response.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setGateTimedOut(false);
+                  lastRefreshRef.current = 0;
+                  void refreshAuth({ force: true });
+                }}
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate({ to: "/login", replace: true })}
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                Sign in
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        className="flex min-h-dvh items-center justify-center bg-background px-4 text-foreground"
+      >
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <span
+            aria-hidden
+            className="h-9 w-9 animate-spin rounded-full border-2 border-[var(--neon-purple)]/30 border-t-[var(--neon-purple)]"
+          />
+          <p className="text-sm font-medium tracking-wide">Restoring your dashboard…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-background text-foreground">
