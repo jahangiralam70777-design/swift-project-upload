@@ -110,6 +110,7 @@ function StudentLayout() {
       }
       const adminLike =
         user.role === "admin" || user.role === "super_admin" || user.role === "moderator";
+      setVerified(false);
       navigate({ to: adminLike ? "/admin" : "/login", replace: true });
       return;
     }
@@ -123,6 +124,7 @@ function StudentLayout() {
       return;
     }
 
+    setVerified(false);
     goLogin();
   }, [sessionReady, authLoading, user, navigate, refreshAuth]);
 
