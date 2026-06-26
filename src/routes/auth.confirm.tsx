@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 // Alias for Supabase's default email-confirmation template, which targets
 // `{{ .SiteURL }}/auth/confirm?token_hash=...&type=...`. We forward the
@@ -44,12 +45,13 @@ export const Route = createFileRoute("/auth/confirm")({
 });
 
 function AuthConfirm() {
-  if (typeof window !== "undefined") {
+  useEffect(() => {
     const search = window.location.search || "";
     const hash = window.location.hash || "";
     const target = pickTarget(new URL(window.location.href));
     window.location.replace(`${target}${search}${hash}`);
-  }
+  }, []);
+
   return (
     <div className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground">
       Confirming your email…
