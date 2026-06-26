@@ -39,7 +39,9 @@ let storageSubscribed = false;
 let inflightRefresh: Promise<UserSession> | null = null;
 let authEpoch = 0;
 let refreshEpoch = 0;
+let storageAuthRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 const AUTH_REFRESH_TIMEOUT_MS = 8_000;
+const STORAGE_AUTH_REFRESH_DEBOUNCE_MS = 250;
 
 function deferAuthWork(work: () => void) {
   if (typeof window !== "undefined") {
@@ -101,7 +103,6 @@ export function getLocalAuthSnapshot(): AuthUser | null {
 export function hasLocalAuthSession(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    if (window.localStorage.getItem(AUTH_SNAPSHOT_KEY)) return true;
     if (window.localStorage.getItem("edumaster.demo_session")) return true;
     for (let i = 0; i < window.localStorage.length; i++) {
       const key = window.localStorage.key(i);
@@ -141,6 +142,15 @@ function bumpAuthVersion() {
 function emitAuthSync() {
   // Same-tab auth sync is handled by Zustand state updates. Other tabs get
   // native `storage` events from persistAuthSnapshot/localStorage writes.
+}
+
+function scheduleStorageAuthRefresh() {
+  if (typeof window === "undefined") return;
+  if (storageAuthRefreshTimer) window.clearTimeout(storageAuthRefreshTimer);
+  storageAuthRefreshTimer = window.setTimeout(() => {
+    storageAuthRefreshTimer = null;
+    void useAppStore.getState().refreshAuth();
+  }, STORAGE_AUTH_REFRESH_DEBOUNCE_MS);
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -251,7 +261,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           !(key.startsWith("sb-") && key.endsWith("-auth-token"))
         )
           return;
-        void useAppStore.getState().refreshAuth({ force: true });
+        scheduleStorageAuthRefresh();
       });
     }
 
