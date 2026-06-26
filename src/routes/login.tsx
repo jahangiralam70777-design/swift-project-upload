@@ -34,7 +34,6 @@ function StudentLogin() {
   const [loading, setLoading] = useState(false);
   const [remember, setRemember] = useState(false);
   const refreshAuth = useAppStore((s) => s.refreshAuth);
-  const syncAuthSession = useAppStore((s) => s.syncAuthSession);
   const navigate = useNavigate();
   const [expired, setExpired] = useState(false);
   const controlsQ = useAuthControls();
@@ -54,7 +53,6 @@ function StudentLogin() {
     try {
       setRememberMe(remember);
       const result = await signInWithEmail(emailVal.trim(), pwVal);
-      if (result.session) syncAuthSession(result.session);
       const u = await refreshAuth({ force: true });
       // Strict separation: admin accounts MUST sign in via /admin/login.
       // Sign them out and STAY on /login (no cross-redirect to admin entry).

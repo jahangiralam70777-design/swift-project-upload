@@ -171,7 +171,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     applyThemeClass(theme);
     persistTheme(theme);
     const demoUser = getDemoSession();
-    const snapshotUser = getLocalAuthSnapshot();
+    // Only hydrate a cached user snapshot if a real local auth token (or demo
+    // session) still exists. A leftover snapshot by itself is not a session;
+    // restoring it made /login redirect to /dashboard, where the student guard
+    // immediately redirected back to /login — an auth-loop on stale storage.
+    const snapshotUser = hasLocalAuthSession() ? getLocalAuthSnapshot() : null;
     const localUser = demoUser ?? snapshotUser;
     set({
       theme,
