@@ -198,7 +198,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "CA Aspire BD — Professional ICAB & Chartered Accountancy Learning Platform" },
       {
         name: "description",
@@ -230,6 +230,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
     ],
     scripts: [
+      {
+        children: THEME_PREHYDRATION_SCRIPT,
+      },
       {
         children: AUTH_CALLBACK_RESCUE_SCRIPT,
       },
