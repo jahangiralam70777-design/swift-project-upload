@@ -165,6 +165,15 @@ function AdminGate({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (!result) {
+        if (localAdmin) {
+          setVerified(true);
+        } else {
+          navigate({ to: "/admin/login", replace: true });
+        }
+        return;
+      }
+
       try {
         if (result?.degraded) {
           console.warn("[admin-route] admin verification degraded", {
