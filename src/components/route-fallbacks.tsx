@@ -109,9 +109,14 @@ export function DefaultErrorFallback({ error, reset }: { error: Error; reset: ()
   useEffect(() => {
     if (isNonRetryable(error)) return;
     const sig = `${error?.message ?? ""}::${error?.stack?.slice(0, 200) ?? ""}`;
+    const isNewError = sig !== errorSigRef.current;
+    if (isNewError) {
+      setAttempts(0);
+      setRecovering(false);
+      errorSigRef.current = sig;
+    }
     // Same error as last render → don't restart the retry pipeline.
-    if (sig === errorSigRef.current && attempts > 0) return;
-    errorSigRef.current = sig;
+    if (!isNewError && attempts > 0) return;
     if (attempts >= MAX_AUTO_RETRIES) return;
     setRecovering(true);
     const delay = AUTO_RETRY_DELAYS_MS[Math.min(attempts, AUTO_RETRY_DELAYS_MS.length - 1)];
