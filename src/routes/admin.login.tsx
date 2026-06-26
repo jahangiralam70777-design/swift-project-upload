@@ -13,6 +13,7 @@ import {
   verifyAdminAccess,
   type VerifyAdminAccessResult,
 } from "@/lib/admin-verify.functions";
+import { withTimeout } from "@/lib/async-timeout";
 
 export const Route = createFileRoute("/admin/login")({
   component: AdminLogin,
@@ -38,17 +39,12 @@ function AdminLogin() {
     try {
       // Admin sessions are never "remembered" — they must die with the tab.
       setRememberMe(false);
-      await signInWithEmail(emailVal, pwVal, { intent: "admin" });
-      await syncCurrentUserRoleMetadata();
-      await supabase.auth.refreshSession().catch(() => undefined);
-      const user = await refreshAuth({ force: true });
-      if (!user) throw new Error("Session not found");
-      const verified = (await verifyAdminAccess()) as VerifyAdminAccessResult;
-      console.info("[admin-login] verified role sources", {
-        sessionRole: user.role,
-        serverRole: verified.role,
-        sources: verified.sources,
-      });
+      await signInWithEmail(emailVal.trim(), pwVal, { intent: "admin" });
+      const verified = (await withTimeout(
+        verifyAdminAccess(),
+        12_000,
+        "Admin verification timed out. Please check your connection and try again.",
+      )) as VerifyAdminAccessResult;
       if (!verified.isAdmin) {
         // Strict separation: only admin-role accounts may use /admin/login.
         // Sign non-admins out and STAY on /admin/login (no cross-redirect).
@@ -57,6 +53,22 @@ function AdminLogin() {
         toast.error("Access Denied. Student accounts cannot access the Admin Portal.");
         return;
       }
+      // The DB role is now authoritative. Syncing JWT metadata is best-effort
+      // only and must never deadlock the login flow; AdminGate also verifies
+      // against the server on entry.
+      await withTimeout(syncCurrentUserRoleMetadata(), 8_000, "Admin metadata sync timed out").catch(
+        (error) => console.warn("[admin-login] metadata sync skipped", error),
+      );
+      await withTimeout(supabase.auth.refreshSession(), 8_000, "Admin token refresh timed out").catch(
+        (error) => console.warn("[admin-login] token refresh skipped", error),
+      );
+      const user = await refreshAuth({ force: true });
+      if (!user) throw new Error("Session not found");
+      console.info("[admin-login] verified role sources", {
+        sessionRole: user.role,
+        serverRole: verified.role,
+        sources: verified.sources,
+      });
       toast.success("Admin verified. Welcome.");
       try {
         window.sessionStorage.setItem("admin-verified-at", String(Date.now()));
