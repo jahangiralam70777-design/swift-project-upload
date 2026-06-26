@@ -121,7 +121,7 @@ export async function signInWithEmail(
     const uid = data.user?.id;
     if (uid) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: banned } = await withTimeout(
+      const { data: banned } = await withTimeout<{ data: boolean | null }>(
         (supabase as any).rpc("is_user_banned", { _user_id: uid }),
         AUTH_SECONDARY_TIMEOUT_MS,
         "Ban check timed out",
