@@ -93,25 +93,27 @@ function AdminGate({ children }: { children: React.ReactNode }) {
     (async () => {
       setGateTimedOut(false);
       let checkedUserId = user?.id ?? null;
-      try {
-        const [userCheck, result] = await Promise.all([
-          withTimeout(
-            supabase.auth.getUser(),
-            ADMIN_GATE_TIMEOUT_MS,
-            "Admin auth user check timed out",
-          ),
-          withTimeout(
-            verifyAdmin(),
-            ADMIN_GATE_TIMEOUT_MS,
-            "Admin role verification timed out",
-          ) as Promise<VerifyAdminAccessResult>,
-        ]);
-        if (cancelled) return;
-        const { data: userData, error: userErr } = userCheck;
-        if (userErr || !userData.user) {
-          navigate({ to: "/admin/login", replace: true });
-          return;
-        }
+      const localAdmin =
+        user?.role === "admin" || user?.role === "super_admin" || user?.role === "moderator";
+      const [userCheck, verifyCheck] = await Promise.allSettled([
+        withTimeout(
+          supabase.auth.getUser(),
+          ADMIN_GATE_TIMEOUT_MS,
+          "Admin auth user check timed out",
+        ),
+        withTimeout(
+          verifyAdmin(),
+          ADMIN_GATE_TIMEOUT_MS,
+          "Admin role verification timed out",
+        ) as Promise<VerifyAdminAccessResult>,
+      ]);
+      if (cancelled) return;
+
+      const userResult = userCheck.status === "fulfilled" ? userCheck.value : null;
+      const result = verifyCheck.status === "fulfilled" ? verifyCheck.value : null;
+      const userData = userResult?.data;
+      const userErr = userResult?.error;
+      if (userData?.user) {
         checkedUserId = userData.user.id;
         console.info("[admin-route] session user", {
           id: userData.user.id,
@@ -119,9 +121,54 @@ function AdminGate({ children }: { children: React.ReactNode }) {
           appMetadata: userData.user.app_metadata,
           userMetadata: userData.user.user_metadata,
         });
+      }
+
+      if (userCheck.status === "rejected") {
+        console.warn("[admin-route] auth user check degraded", userCheck.reason);
+        reportError({
+          source: "frontend",
+          severity: "medium",
+          message: "Admin auth user check degraded during navigation",
+          route: window.location.pathname,
+          stack: userCheck.reason instanceof Error ? userCheck.reason.stack : undefined,
+          payload: {
+            userId: checkedUserId,
+            role: user?.role ?? null,
+            error: userCheck.reason instanceof Error ? userCheck.reason.message : String(userCheck.reason),
+            ts: new Date().toISOString(),
+          },
+        });
+      }
+
+      if (verifyCheck.status === "rejected") {
+        console.warn("[admin-route] admin verification request failed", {
+          userId: checkedUserId,
+          error: verifyCheck.reason instanceof Error ? verifyCheck.reason.message : String(verifyCheck.reason),
+        });
+        reportError({
+          source: "frontend",
+          severity: "medium",
+          message: "Admin verification request failed during navigation",
+          route: window.location.pathname,
+          stack: verifyCheck.reason instanceof Error ? verifyCheck.reason.stack : undefined,
+          payload: {
+            userId: checkedUserId,
+            role: user?.role ?? null,
+            error: verifyCheck.reason instanceof Error ? verifyCheck.reason.message : String(verifyCheck.reason),
+            ts: new Date().toISOString(),
+          },
+        });
+      }
+
+      if ((userErr || (userResult && !userData?.user)) && !result?.isAdmin) {
+        navigate({ to: "/admin/login", replace: true });
+        return;
+      }
+
+      try {
         if (result?.degraded) {
           console.warn("[admin-route] admin verification degraded", {
-            userId: userData.user.id,
+            userId: checkedUserId,
             reason: result.reason,
           });
           reportError({
@@ -130,14 +177,12 @@ function AdminGate({ children }: { children: React.ReactNode }) {
             message: "Admin verification degraded during navigation",
             route: window.location.pathname,
             payload: {
-              userId: userData.user.id,
+              userId: checkedUserId,
               role: user?.role ?? null,
               reason: result.reason ?? null,
               ts: new Date().toISOString(),
             },
           });
-          const localAdmin =
-            user?.role === "admin" || user?.role === "super_admin" || user?.role === "moderator";
           if (localAdmin) {
             setVerified(true);
           } else {
@@ -147,13 +192,13 @@ function AdminGate({ children }: { children: React.ReactNode }) {
         }
         if (!result?.isAdmin) {
           console.warn("[admin-route] verifyAdmin returned non-admin", {
-            userId: userData.user.id,
+            userId: checkedUserId,
             sources: result?.sources,
           });
           navigate({ to: "/admin/login", replace: true });
           return;
         }
-        console.info("[admin-route] admin verified", { userId: userData.user.id, role: result.role });
+        console.info("[admin-route] admin verified", { userId: checkedUserId, role: result.role });
         try {
           window.sessionStorage.setItem(ADMIN_VERIFIED_KEY, String(Date.now()));
         } catch {
@@ -179,8 +224,6 @@ function AdminGate({ children }: { children: React.ReactNode }) {
             ts: new Date().toISOString(),
           },
         });
-        const localAdmin =
-          user?.role === "admin" || user?.role === "super_admin" || user?.role === "moderator";
         if (localAdmin) {
           setVerified(true);
         } else {
