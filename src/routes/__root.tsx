@@ -25,6 +25,7 @@ import { useNavTiming } from "@/lib/nav-timing";
 import { SkipToContent } from "@/components/a11y/SkipToContent";
 import { LiveRegionProvider } from "@/components/a11y/LiveRegion";
 import { ConfirmDialogHost } from "@/components/ui/confirm-imperative";
+import { withTimeout } from "@/lib/async-timeout";
 
 // Defer always-on floating widgets to a separate chunk that loads after the
 // page is interactive. They don't affect first paint and most visitors on
@@ -84,6 +85,11 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+  const [attempts, setAttempts] = useState(0);
+  const [recovering, setRecovering] = useState(false);
+  const errorSigRef = useRef("");
+  const scheduledAttemptRef = useRef(-1);
+
   // Capture route-level render failures into the system error log.
   useEffect(() => {
     reportError({
@@ -93,6 +99,67 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
       stack: error.stack,
     });
   }, [error]);
+
+  useEffect(() => {
+    const message = error?.message ?? "";
+    const stack = error?.stack ?? "";
+    const sig = `${message}::${stack.slice(0, 200)}`;
+    if (sig !== errorSigRef.current) {
+      errorSigRef.current = sig;
+      scheduledAttemptRef.current = -1;
+      setRecovering(false);
+      if (attempts !== 0) {
+        setAttempts(0);
+        return;
+      }
+    }
+    if (/Unauthorized|permission denied|Forbidden|not found|404|401|403/i.test(message)) return;
+    if (/ChunkLoadError|Loading chunk|dynamically imported module|CSS_CHUNK_LOAD_FAILED/i.test(`${message}\n${stack}`)) {
+      if (typeof window !== "undefined") {
+        try {
+          const key = "caaspire.chunk_recovery_v1";
+          const prior = JSON.parse(window.sessionStorage.getItem(key) || "null") as { href?: string; ts?: number } | null;
+          const now = Date.now();
+          if (!prior || prior.href !== window.location.href || now - (prior.ts ?? 0) > 600_000) {
+            window.sessionStorage.setItem(key, JSON.stringify({ href: window.location.href, ts: now }));
+            window.location.reload();
+            return;
+          }
+        } catch {
+          window.location.reload();
+          return;
+        }
+      }
+    }
+    if (attempts >= 2) return;
+    if (scheduledAttemptRef.current === attempts) return;
+    scheduledAttemptRef.current = attempts;
+    setRecovering(true);
+    const id = window.setTimeout(() => {
+      setAttempts((a) => a + 1);
+      void withTimeout(router.invalidate(), 5_000, "Root route recovery invalidation timed out")
+        .catch((recoveryError) => {
+          console.warn("[root-error] recovery invalidate failed", recoveryError);
+        })
+        .finally(() => {
+          reset();
+        });
+    }, attempts === 0 ? 500 : 1500);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempts, error]);
+
+  if (recovering && attempts < 2) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background px-4" role="status" aria-live="polite">
+        <span
+          aria-hidden
+          className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
+        />
+        <span className="sr-only">Recovering…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4">
@@ -106,7 +173,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
-              router.invalidate();
+              scheduledAttemptRef.current = -1;
+              setAttempts(0);
+              void router.invalidate();
               reset();
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -165,6 +234,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         children: AUTH_CALLBACK_RESCUE_SCRIPT,
       },
       {
+        children: CHUNK_RECOVERY_SCRIPT,
+      },
+      {
         type: "application/ld+json",
         children: JSON.stringify({
           "@context": "https://schema.org",
@@ -193,6 +265,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 const AUTH_CALLBACK_RESCUE_SCRIPT = `(function(){try{var l=window.location;var p=l.pathname;var s=new URLSearchParams(l.search||'');var h=l.hash||'';if(p==='/email-verified'||p==='/auth/confirm'||p==='/auth/callback'||p==='/reset-password'||p==='/forgot-password')return;var has=s.has('code')||s.has('token_hash')||s.has('token')||s.has('error')||s.has('error_description')||h.indexOf('access_token=')>-1||h.indexOf('refresh_token=')>-1||h.indexOf('type=signup')>-1||h.indexOf('type=magiclink')>-1||h.indexOf('type=invite')>-1||h.indexOf('error=')>-1||h.indexOf('error_description=')>-1;if(has){try{sessionStorage.setItem('caaspire.auth_callback_rescue',JSON.stringify({path:p,searchKeys:Array.from(s.keys()),hasHash:!!h,ts:Date.now()}));}catch(e){}l.replace('/email-verified'+(l.search||'')+h);}}catch(e){}})();`;
+
+const CHUNK_RECOVERY_SCRIPT = `(function(){var k='caaspire.chunk_recovery_v1';function text(e){try{return String((e&&e.message)||e||'')+' '+String((e&&e.filename)||'')+' '+String((e&&e.reason&&(e.reason.message||e.reason))||'');}catch(_){return'';}}function isChunk(e){return /ChunkLoadError|Loading chunk|dynamically imported module|Failed to fetch|CSS_CHUNK_LOAD_FAILED/i.test(text(e));}function recover(e){if(!isChunk(e))return;try{var now=Date.now();var prev=JSON.parse(sessionStorage.getItem(k)||'null');if(prev&&prev.href===location.href&&now-(prev.ts||0)<600000){console.warn('[chunk-recovery] suppressed reload loop',e);return;}sessionStorage.setItem(k,JSON.stringify({href:location.href,ts:now}));location.reload();}catch(_){location.reload();}}window.addEventListener('error',recover,true);window.addEventListener('unhandledrejection',recover,true);})();`;
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
