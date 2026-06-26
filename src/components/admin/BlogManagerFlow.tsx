@@ -2641,7 +2641,13 @@ function SettingsSection() {
   };
 
   function save() {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      }
+    } catch (error) {
+      console.warn("[blog-settings] local settings save failed", error);
+    }
     setDirty(false);
     toast.success("Settings saved");
   }
