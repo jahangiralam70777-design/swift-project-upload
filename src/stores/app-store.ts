@@ -106,7 +106,30 @@ export function hasLocalAuthSession(): boolean {
     if (window.localStorage.getItem("edumaster.demo_session")) return true;
     for (let i = 0; i < window.localStorage.length; i++) {
       const key = window.localStorage.key(i);
-      if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) return true;
+      if (!key || !key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      // Validate token shape and expiry so a stale/corrupted session does not
+      // trigger an infinite refresh loop in protected gates.
+      try {
+        const parsed = JSON.parse(raw);
+        const expiresAt =
+          parsed?.expires_at ??
+          parsed?.currentSession?.expires_at ??
+          parsed?.[0]?.expires_at;
+        if (typeof expiresAt === "number") {
+          // Allow a 60s skew; the auto-refresh handler will exchange it.
+          if (expiresAt * 1000 + 60_000 < Date.now()) {
+            // Token has been expired for >60s without refresh — treat as absent
+            // so callers go to /login instead of spinning on refresh.
+            continue;
+          }
+        }
+        return true;
+      } catch {
+        // Malformed token — treat as missing rather than blocking the user.
+        continue;
+      }
     }
   } catch {
     return false;

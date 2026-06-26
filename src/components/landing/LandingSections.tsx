@@ -290,7 +290,9 @@ export const DEFAULT_STATS: PlatformStat[] = [
 
 export function formatStatValue(s: PlatformStat): string {
   const n = s.divisor === 1 ? s.value : Math.round(s.value / s.divisor);
-  return `${n.toLocaleString()}${s.suffix}`;
+  // Explicit locale prevents SSR/client hydration mismatches when the
+  // server runtime locale differs from the visitor's browser locale.
+  return `${n.toLocaleString("en-US")}${s.suffix}`;
 }
 
 // Reads the published `stats` homepage section and merges over the
@@ -369,7 +371,7 @@ function StatCell({ stat, run }: { stat: PlatformStat; run: boolean }) {
               color: "transparent",
             }}
           >
-            {display.toLocaleString()}
+            {display.toLocaleString("en-US")}
             {stat.suffix}
           </p>
           <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
