@@ -198,7 +198,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: "CA Aspire BD — Professional ICAB & Chartered Accountancy Learning Platform" },
       {
         name: "description",
@@ -230,6 +230,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
     ],
     scripts: [
+      {
+        children: THEME_PREHYDRATION_SCRIPT,
+      },
       {
         children: AUTH_CALLBACK_RESCUE_SCRIPT,
       },
@@ -263,6 +266,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
+
+const THEME_PREHYDRATION_SCRIPT = `(function(){try{var t=null;try{t=localStorage.getItem('edumaster.theme');}catch(e){}if(t!=='dark'&&t!=='light'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}var d=document.documentElement;if(t==='dark')d.classList.add('dark');else d.classList.remove('dark');d.style.colorScheme=t;}catch(e){}})();`;
 
 const AUTH_CALLBACK_RESCUE_SCRIPT = `(function(){try{var l=window.location;var p=l.pathname;var s=new URLSearchParams(l.search||'');var h=l.hash||'';if(p==='/email-verified'||p==='/auth/confirm'||p==='/auth/callback'||p==='/reset-password'||p==='/forgot-password')return;var has=s.has('code')||s.has('token_hash')||s.has('token')||s.has('error')||s.has('error_description')||h.indexOf('access_token=')>-1||h.indexOf('refresh_token=')>-1||h.indexOf('type=signup')>-1||h.indexOf('type=magiclink')>-1||h.indexOf('type=invite')>-1||h.indexOf('error=')>-1||h.indexOf('error_description=')>-1;if(has){try{sessionStorage.setItem('caaspire.auth_callback_rescue',JSON.stringify({path:p,searchKeys:Array.from(s.keys()),hasHash:!!h,ts:Date.now()}));}catch(e){}l.replace('/email-verified'+(l.search||'')+h);}}catch(e){}})();`;
 
