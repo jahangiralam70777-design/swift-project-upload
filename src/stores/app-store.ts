@@ -330,6 +330,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         const demoUser = getDemoSession();
         if (!data.session && !demoUser) {
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch {
+            /* no remote session to revoke; local storage cleanup is best-effort */
+          }
           persistAuthSnapshot(null);
           clearLocalSessionId();
           if (runId === refreshEpoch) {
