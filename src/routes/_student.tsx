@@ -75,15 +75,7 @@ function StudentLayout() {
   const refreshAuth = useAppStore((s) => s.refreshAuth);
   const [verified, setVerified] = useState(false);
   const [gateTimedOut, setGateTimedOut] = useState(false);
-  const mountedRef = useRef(true);
   const lastRefreshRef = useRef(0);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (verified) return;
