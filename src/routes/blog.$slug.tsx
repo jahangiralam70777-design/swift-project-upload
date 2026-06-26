@@ -237,16 +237,12 @@ function BlogPostPage() {
                 <>
                   <span>•</span>
                   <time dateTime={post.published_at}>
-                    {new Date(post.published_at).toLocaleDateString(undefined, {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+                    {formatDate(post.published_at, "long")}
                   </time>
                 </>
               )}
               <span>•</span>
-              <span>{post.view_count.toLocaleString()} views</span>
+              <span>{formatCount(post.view_count)} views</span>
             </div>
 
             {post.cover_image_url && (
@@ -415,7 +411,7 @@ function BlogPostPage() {
                           {r.title}
                         </p>
                         <span className="mt-auto text-[11px] text-muted-foreground">
-                          {r.reading_minutes} min • {(r.view_count ?? 0).toLocaleString()} views
+                          {r.reading_minutes} min • {formatCount(r.view_count)} views
                         </span>
                       </div>
                     </Link>
@@ -462,4 +458,17 @@ function ShareBtn({
       {children}
     </button>
   );
+}
+
+function formatCount(value: number | null | undefined) {
+  return new Intl.NumberFormat("en-US").format(value ?? 0);
+}
+
+function formatDate(value: string, style: "short" | "long" = "short") {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    ...(style === "long"
+      ? { year: "numeric", month: "long", day: "numeric" }
+      : { year: "numeric", month: "numeric", day: "numeric" }),
+  }).format(new Date(value));
 }
