@@ -71,7 +71,6 @@ const settingKeySchema = z
 // =============================================================
 
 export const publicGetHomepageContent = createServerFn({ method: "GET" })
-  .inputValidator(noInput)
   .handler(async () => {
   try {
     const supabaseAdmin = await getPublicReadClient();
@@ -101,7 +100,6 @@ export const publicGetHomepageContent = createServerFn({ method: "GET" })
 });
 
 export const publicGetSiteSettings = createServerFn({ method: "GET" })
-  .inputValidator(noInput)
   .handler(async () => {
   try {
     const supabaseAdmin = await getPublicReadClient();
