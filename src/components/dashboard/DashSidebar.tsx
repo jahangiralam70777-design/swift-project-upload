@@ -1,9 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { GraduationCap, X } from "lucide-react";
+import { GraduationCap } from "lucide-react";
+import { useEffect } from "react";
 import { studentNavItems } from "@/lib/app-data";
 import { useAppStore } from "@/stores/app-store";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { DashSidebarFooter } from "./DashSidebarFooter";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 export function DashSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
@@ -13,6 +15,17 @@ export function DashSidebar() {
   const visibleItems = studentNavItems.filter((item) => !isPathHidden(item.to));
   const learningItems = visibleItems.filter((i) => !["Notifications", "Profile"].includes(i.title));
   const accountItems = visibleItems.filter((i) => ["Notifications", "Profile"].includes(i.title));
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = () => {
+      if (mql.matches) setSidebarOpen(false);
+    };
+    closeOnDesktop();
+    mql.addEventListener("change", closeOnDesktop);
+    return () => mql.removeEventListener("change", closeOnDesktop);
+  }, [setSidebarOpen]);
+
   const SidebarContent = ({ mobile = false }: { mobile?: boolean }) => (
     <>
       <Link
@@ -91,25 +104,20 @@ export function DashSidebar() {
   );
   return (
     <>
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <button
-            aria-label="Close menu"
-            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <aside className="glass shadow-card-soft pointer-events-auto relative z-10 flex h-full w-72 max-w-[85vw] flex-col p-4">
-            <button
-              aria-label="Close menu"
-              onClick={() => setSidebarOpen(false)}
-              className="absolute right-3 top-3 rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen} modal>
+        <SheetContent
+          side="left"
+          className="glass shadow-card-soft flex h-dvh w-72 max-w-[85vw] flex-col overflow-hidden border-border/60 p-4 pt-4 lg:hidden"
+        >
+          <SheetTitle className="sr-only">Student navigation</SheetTitle>
+          <SheetDescription className="sr-only">
+            Main navigation links for the student dashboard.
+          </SheetDescription>
+          <div className="flex min-h-0 flex-1 flex-col">
             <SidebarContent mobile />
-          </aside>
-        </div>
-      )}
+          </div>
+        </SheetContent>
+      </Sheet>
       <aside className="glass shadow-card-soft sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 flex-col rounded-3xl p-4 lg:flex">
         <SidebarContent />
       </aside>
