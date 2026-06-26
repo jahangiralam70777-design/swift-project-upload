@@ -48,19 +48,18 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState<string>("");
-  const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const user = useAppStore((s) => s.user);
   const sessionReady = useAppStore((s) => s.sessionReady);
   const nav = useSetting<NavbarSettings>("navbar", NAVBAR_DEFAULTS);
   const LINKS: NavLink[] =
     Array.isArray(nav.links) && nav.links.length > 0 ? nav.links : NAVBAR_DEFAULTS.links;
-  // Gate any UI that depends on browser-only state (theme from localStorage,
-  // user session restored by hydrate()) until after the first client commit
-  // so SSR HTML and the first client render are byte-identical.
+  // Auth UI must stay layout-stable across SSR -> hydrate -> session-restore.
+  // We reserve the slot and only swap the content once the session is known.
   const hydrated = useHydrated();
   const showAuthedNav = hydrated && sessionReady && Boolean(user);
-  const themeIsDark = hydrated && theme === "dark";
+  const authSlotReady = hydrated && sessionReady;
+
 
   useEffect(() => {
     const onScroll = () => {
