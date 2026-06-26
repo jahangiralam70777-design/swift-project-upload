@@ -176,6 +176,7 @@ export function DefaultErrorFallback({ error, reset }: { error: Error; reset: ()
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={async () => {
+              scheduledAttemptRef.current = -1;
               setAttempts(0);
               try {
                 await withTimeout(
