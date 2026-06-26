@@ -318,8 +318,20 @@ function AdminLayout() {
     }
   }, [mounted, path, navigate]);
 
-  // First client paint matches SSR (empty).
-  if (!mounted) return null;
+  // Show bounded loading UI during client mount instead of a blank screen.
+  if (!mounted) {
+    return (
+      <div className="relative flex min-h-dvh items-center justify-center overflow-x-hidden bg-background px-4 text-foreground">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground" role="status" aria-live="polite">
+          <span
+            aria-hidden
+            className="h-9 w-9 animate-spin rounded-full border-2 border-[var(--neon-purple)]/30 border-t-[var(--neon-purple)]"
+          />
+          <p className="text-sm font-medium tracking-wide">Preparing admin portal…</p>
+        </div>
+      </div>
+    );
+  }
 
   // The admin login page lives at /admin/login but must be publicly reachable
   // (no sidebar, no gate) so unauthenticated admins can sign in.
@@ -332,9 +344,21 @@ function AdminLayout() {
     );
   }
 
-  // Anonymous visitor: the effect above is navigating to /admin/login.
-  // Render null in the meantime so we don't flash admin chrome.
-  if (!hasLocalAuthSession()) return null;
+  // Anonymous visitor: the effect above is navigating to /admin/login. Keep a
+  // neutral loading surface instead of a white screen while the redirect lands.
+  if (!hasLocalAuthSession()) {
+    return (
+      <div className="relative flex min-h-dvh items-center justify-center overflow-x-hidden bg-background px-4 text-foreground">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground" role="status" aria-live="polite">
+          <span
+            aria-hidden
+            className="h-9 w-9 animate-spin rounded-full border-2 border-[var(--neon-purple)]/30 border-t-[var(--neon-purple)]"
+          />
+          <p className="text-sm font-medium tracking-wide">Redirecting to secure login…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-background text-foreground">
